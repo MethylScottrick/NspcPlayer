@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ProjectView>ProjectFiles</ProjectView>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x86'">
+    <StartArguments>"C:\Users\Methy\Documents\Visual Studio 2010\Projects\NspcPlayer\bin\Debug\TestAssets\brinstar_remade-sc.nspc"</StartArguments>
+  </PropertyGroup>
+</Project>
