@@ -226,8 +226,8 @@ Public Class frmPlayer
 		End If
 	End Sub
 	Private Sub UpdateComboSelectedIndex()
-		If cboSongIndices.SelectedItem IsNot Nothing Then
-			SelectedSongIndex = Val(cboSongIndices.SelectedText) - 1
+		If cboSongIndices.SelectedIndex >= 0 Then
+			SelectedSongIndex = Val(cboSongIndices.Items(cboSongIndices.SelectedIndex))
 		Else
 			SelectedSongIndex = -1
 		End If
@@ -362,7 +362,7 @@ Public Class frmPlayer
 		Dim IndexList As New List(Of Integer)()
 		For i As Integer = 0 To 15
 			Dim PtrAddress As UInt16 = SongTable_SM + (i * 2)
-			If PtrAddress <= LowestPointer Then Exit For
+			If (LowestPointer <> -1) AndAlso (CInt(PtrAddress) >= LowestPointer) Then Exit For
 			If LoadedNspc.IsDataPresent(PtrAddress, 2) Then
 				Dim Pointer As UInt16 = LoadedData.ReadUInt16(PtrAddress + &H100)
 				If StartingIndex = -1 Then
@@ -440,16 +440,18 @@ Public Class frmPlayer
 		End If
 	End Function
 	Public Sub WriteSongIndex()
+		Dim Index As Integer = CByte(SelectedSongIndex)
 		If PlayState = PlayStates.NotLoaded OrElse PlayState = PlayStates.UnsupportedGame Then Return
 		If PlayState = PlayStates.Playing OrElse PlayState = PlayStates.Paused Then DoStop()
+		Audio.LoadCheck()
 		Select Case DetectedGame
 			Case Games.ALinkToThePast
 				Audio.APU.FreeSPC()
-				LoadedData.WriteByte(SongIndex_ALTTP, CByte(Val(cboSongIndices.SelectedText) + 1))
+				LoadedData.WriteByte(SongIndex_ALTTP + &H100, CByte(Index))
 				Audio.LoadSPC(LoadedData)
 			Case Games.SuperMetroid
 				Audio.APU.FreeSPC()
-				LoadedData.WriteByte(SongIndex_SM, CByte(Val(cboSongIndices.SelectedText) + 1))
+				LoadedData.WriteByte(SongIndex_SM + &H100, CByte(Index))
 				Audio.LoadSPC(LoadedData)
 			Case Else
 		End Select
@@ -508,9 +510,6 @@ Public Class frmPlayer
 		RepeatOn = Not RepeatOn
 	End Sub
 	Private Sub cboSongIndices_SelectedIndexChanged(sender As System.Object, e As System.EventArgs) Handles cboSongIndices.SelectedIndexChanged
-		UpdateComboSelectedIndex()
-	End Sub
-	Private Sub cboSongIndices_SelectedValueChanged(sender As Object, e As System.EventArgs) Handles cboSongIndices.SelectedValueChanged
 		UpdateComboSelectedIndex()
 	End Sub
 	Private Sub _Audio_Loaded() Handles _Audio.Loaded

@@ -52,6 +52,7 @@ Partial Class frmPlayer
 		Me.tbSeek.Name = "tbSeek"
 		Me.tbSeek.Size = New System.Drawing.Size(440, 45)
 		Me.tbSeek.TabIndex = 1
+		Me.tbSeek.Visible = False
 		'
 		'lblFile
 		'
@@ -96,6 +97,7 @@ Partial Class frmPlayer
 		Me.btnRepeat.Size = New System.Drawing.Size(32, 32)
 		Me.btnRepeat.TabIndex = 8
 		Me.btnRepeat.UseVisualStyleBackColor = True
+		Me.btnRepeat.Visible = False
 		'
 		'btnStop
 		'
