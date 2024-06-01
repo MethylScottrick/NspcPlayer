@@ -38,9 +38,12 @@
 		Me.Blocks = Blocks
 	End Sub
 	Public Sub UpdateForBlocks()
+		' TODO: check for overflows
 		RangeDict.Clear()
 		For Each block As NspcBlock In Blocks
 			If block.Length = 0 Then Continue For
+			Dim EndAddress As Long = CLng(block.Address) + CLng(block.Length)
+			If EndAddress > UInt16.MaxValue Then Throw New System.IO.FileFormatException("File contains block of data that won't fit in ARAM")
 			RangeDict.Add(block.Address, (block.Address + block.Length) - 1)
 			'RangeDict.Add(New AddressRange(block.Address, (block.Address + block.Length) - 1))
 		Next

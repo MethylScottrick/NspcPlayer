@@ -134,34 +134,6 @@ Public Module Globals
 				obj.Text = Text
 			End Try
 		End If
-
-		'obj.Text = Text
-
-		'If obj.AutoSize OrElse obj.AutoEllipsis Then
-		'	obj.Text = Text
-		'Else
-		'	Using g As Graphics = Graphics.FromHwnd(obj.Handle)
-		'		Dim LabelWidth As Integer = obj.ClientSize.Width
-		'		'Dim StrFmt As New StringFormat(StringFormat.GenericDefault)
-		'		Dim StrFmt As New StringFormat(StringFormat.GenericTypographic)
-		'		StrFmt.Alignment = StringAlignment.Near
-		'		StrFmt.FormatFlags = StringFormatFlags.NoWrap
-		'		StrFmt.LineAlignment = StringAlignment.Near
-		'		StrFmt.Trimming = StringTrimming.EllipsisPath
-		'		StrFmt.HotkeyPrefix = Drawing.Text.HotkeyPrefix.None
-		'		'Dim TextWidth As Integer = g.MeasureString(Text, obj.Font).Width
-		'		Dim CharsFitted As Integer = -1
-		'		Dim LinesFilled As Integer = -1
-		'		Dim TextWidth As Integer = g.MeasureString(Text, obj.Font, New SizeF(obj.ClientSize), StrFmt, CharsFitted, LinesFilled).Width
-		'		Dim TextWidth2 As Integer = g.MeasureString(Text, obj.Font).Width
-		'		MsgBox(CharsFitted & ", " * LinesFilled)
-		'		'If TextWidth >= LabelWidth Then
-		'		''Dim NewText As String = g.ell
-		'		'Else
-		'		'obj.Text = Text
-		'		'End If
-		'	End Using
-		'End If
 	End Sub
 End Module
 Public Enum PlayStates As Integer

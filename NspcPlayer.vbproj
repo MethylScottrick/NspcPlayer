@@ -23,8 +23,7 @@
     <DefineDebug>true</DefineDebug>
     <DefineTrace>true</DefineTrace>
     <OutputPath>bin\Debug\</OutputPath>
-    <DocumentationFile>
-    </DocumentationFile>
+    <DocumentationFile>NspcPlayer.xml</DocumentationFile>
     <NoWarn>42016,41999,42017,42018,42019,42032,42036,42020,42021,42022</NoWarn>
     <UseVSHostingProcess>false</UseVSHostingProcess>
   </PropertyGroup>
@@ -35,8 +34,7 @@
     <DefineTrace>true</DefineTrace>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
-    <DocumentationFile>
-    </DocumentationFile>
+    <DocumentationFile>NspcPlayer.xml</DocumentationFile>
     <NoWarn>42016,41999,42017,42018,42019,42032,42036,42020,42021,42022</NoWarn>
     <UseVSHostingProcess>false</UseVSHostingProcess>
   </PropertyGroup>
@@ -63,6 +61,7 @@
     <Reference Include="System.Xml" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
+    <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
     <Import Include="Microsoft.VisualBasic" />
@@ -147,10 +146,12 @@
     <Content Include="lib\SlimDX.dll" />
     <Content Include="lib\SlimDX.pdb" />
     <Content Include="lib\SlimDX.xml" />
+    <Content Include="Resources\btn24FastForward.png" />
     <Content Include="Resources\btn24Pause.png" />
     <Content Include="Resources\btn24Play.png" />
     <Content Include="Resources\btn24Repeat.png" />
     <Content Include="Resources\btn24RepeatOn.png" />
+    <Content Include="Resources\btn24Rewind.png" />
     <Content Include="Resources\btn24Stop.png" />
     <Content Include="snesapu.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

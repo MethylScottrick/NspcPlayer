@@ -1,8 +1,14 @@
-﻿#Region "Imports"
+﻿' TODO:
+' can't stop when paused
+#Region "Imports"
 Imports System.IO
 #End Region
 Public Class frmPlayer
-	' TODO: multiple tracks
+#Region "Constants"
+	Private Const SeekSeconds As Integer = 5
+	Private Const ButtonSpacing As Integer = 40
+	Private Const NoDebugData As Boolean = True
+#End Region
 #Region "Properties"
 	Private _PlayState As PlayStates
 	Public Property PlayState As PlayStates
@@ -45,16 +51,29 @@ Public Class frmPlayer
 			End If
 		End Set
 	End Property
-	Private _LoadedData As Byte()
-	Public Property LoadedData As Byte()
+	Private _LoadedSpcData As Byte()
+	Public Property LoadedSpcData As Byte()
 		Get
-			Return _LoadedData
+			Return _LoadedSpcData
 		End Get
 		Set(value As Byte())
-			_LoadedData = value
+			_LoadedSpcData = value
 		End Set
 	End Property
+	Private _LoadedNspc As NspcFile
 	Public Property LoadedNspc As NspcFile
+		Get
+			Return _LoadedNspc
+		End Get
+		Set(value As NspcFile)
+			_LoadedNspc = value
+			If _LoadedNspc Is Nothing Then
+				btnExport.Enabled = False
+			Else
+				btnExport.Enabled = True
+			End If
+		End Set
+	End Property
 	Private _SongIndices As Integer()
 	Public Property SongIndices As Integer()
 		Get
@@ -72,7 +91,7 @@ Public Class frmPlayer
 		End Get
 		Set(value As Integer)
 			If _SelectedSongIndex <> value Then
-				Debug.WriteLine("Index=" & value)
+				'Debug.WriteLine("Index=" & value)
 				_SelectedSongIndex = value
 				UpdateForSelectedIndex()
 			End If
@@ -91,6 +110,7 @@ Public Class frmPlayer
 			_Audio = value
 		End Set
 	End Property
+	Private Property IsFormClosing As Boolean = False
 	Public ReadOnly Property IsNspcLoaded As Boolean
 		Get
 			Return LoadedNspc IsNot Nothing
@@ -101,28 +121,53 @@ Public Class frmPlayer
 			Return Not String.IsNullOrEmpty(LoadedFilePath)
 		End Get
 	End Property
+	Private ReadOnly Property ValueToUseForTime As Long
+		Get
+			If Audio Is Nothing Then Return 0
+			If Not Audio.IsInited Then Return 0
+			If Not Audio.IsApuInited Then Return 0
+			'Return Audio.CurrentTimestamp ' jitters, doesn't seek correctly
+			Return Audio.PlayedSampleCounter
+			'Return Audio.CurrentPlaybackSample
+		End Get
+	End Property
 #End Region
 #Region "Constructors"
 	Private Sub frmPlayer_Load(sender As System.Object, e As System.EventArgs) Handles MyBase.Load
 		SongIndices = New Integer() {}
-		'My.Settings.Reload()
 		PlayState = PlayStates.NotLoaded
 		RepeatOn = True
 		DetectedGame = Games.None
+		Audio = New NspcPlayer.Sound.NspcAudio()
+		Audio.Init(Me)
 		UpdateForPlayState()
 		UpdateForRepeat()
-		Audio = New NspcPlayer.Sound.NspcAudio()
+		LayoutTransportButtons()
+		UpdateTime()
+#If DEBUG Then
+		If NoDebugData Then
+			lblDebug.Visible = False
+		Else
+			lblDebug.Visible = True
+			timUpdateDebugInfo.Start()
+		End If
+#Else
+		lblDebug.Visible = False
+#End If
 		Me.Show()
 		Application.DoEvents()
 		CheckCmdLine()
 	End Sub
 	Private Sub frmPlayer_FormClosing(sender As Object, e As System.Windows.Forms.FormClosingEventArgs) Handles Me.FormClosing
+		IsFormClosing = True
+#If DEBUG Then
+		timUpdateDebugInfo.Stop()
+#End If
 		If PlayState <> PlayStates.NotLoaded Then UnloadFile()
-		'My.Settings.Save()
 	End Sub
 	Private Sub frmPlayer_FormClosed(sender As Object, e As System.Windows.Forms.FormClosedEventArgs) Handles Me.FormClosed
 		If Audio IsNot Nothing Then
-			Audio.Unload()
+			Audio.UnInit()
 			Audio.Dispose()
 			Audio = Nothing
 		End If
@@ -138,43 +183,65 @@ Public Class frmPlayer
 	Private Sub UpdateForPlayState()
 		Select Case PlayState
 			Case PlayStates.NotLoaded
+				timUpdateTime.Enabled = False
 				btnPlay.Enabled = False
 				btnPause.Enabled = False
 				btnStop.Enabled = False
+				btnRewind.Enabled = False
+				btnFastForward.Enabled = False
 				SongLength = -1
 				SongLoopTime = -1
 				SongPauseTime = -1
 				DetectedGame = Games.None
 				SongIndices = New Integer() {}
 			Case PlayStates.UnsupportedGame
+				timUpdateTime.Enabled = False
 				btnPlay.Enabled = False
 				btnPause.Enabled = False
 				btnStop.Enabled = False
+				btnRewind.Enabled = False
+				btnFastForward.Enabled = False
 				SongLength = -1
 				SongLoopTime = -1
 				SongPauseTime = -1
 				SongIndices = New Integer() {}
 			Case PlayStates.NoSongSelected
+				timUpdateTime.Enabled = False
 				btnPlay.Enabled = False
 				btnPause.Enabled = False
 				btnStop.Enabled = False
+				btnRewind.Enabled = False
+				btnFastForward.Enabled = False
 			Case PlayStates.Paused
+				timUpdateTime.Enabled = False
 				btnPlay.Enabled = True
 				btnPause.Enabled = False
 				btnStop.Enabled = True
+				btnRewind.Enabled = False
+				btnFastForward.Enabled = False
 			Case PlayStates.Playing
+				timUpdateTime.Enabled = True
 				btnPlay.Enabled = False
 				btnPause.Enabled = True
 				btnStop.Enabled = True
+				btnRewind.Enabled = True
+				btnFastForward.Enabled = True
 			Case PlayStates.Stopped
+				timUpdateTime.Enabled = False
 				btnPlay.Enabled = True
 				btnPause.Enabled = False
 				btnStop.Enabled = False
+				btnRewind.Enabled = False
+				btnFastForward.Enabled = False
 			Case Else
+				timUpdateTime.Enabled = False
 				btnPlay.Enabled = False
 				btnPause.Enabled = False
 				btnStop.Enabled = False
+				btnRewind.Enabled = False
+				btnFastForward.Enabled = False
 		End Select
+		UpdateTime()
 	End Sub
 	Private Sub UpdateForRepeat()
 		If RepeatOn Then
@@ -232,6 +299,17 @@ Public Class frmPlayer
 			SelectedSongIndex = -1
 		End If
 	End Sub
+	Private Sub LayoutTransportButtons()
+		Dim CurX As Integer = pnlTransportAnchor.Location.X
+		Dim CurY As Integer = pnlTransportAnchor.Location.Y
+		Dim TransportButtons As Button() = {btnRewind, btnPlay, btnPause, btnStop, btnRepeat, btnFastForward}
+		For Each tb As Button In TransportButtons
+			If tb.Visible Then
+				tb.Location = New Point(CurX, CurY)
+				CurX += ButtonSpacing
+			End If
+		Next
+	End Sub
 	Public Sub DoPlay()
 		If IsFileLoaded Then
 			Audio.PlayApu()
@@ -248,20 +326,52 @@ Public Class frmPlayer
 	End Sub
 	Public Sub DoStop()
 		If IsFileLoaded Then
-			If PlayState = PlayStates.Playing Then
+			If PlayState = PlayStates.Playing OrElse PlayState = PlayStates.Paused Then
 				Audio.Stop()
-				'Audio.Reset()
 				Audio.Restart()
-				Audio.ResetPositions()
-				'Audio.WriteSilenceAll()
+				'Audio.ResetPositions()
 				PlayState = PlayStates.Stopped
 			End If
 		End If
 	End Sub
+	Public Sub DoRewind()
+		If IsFileLoaded Then
+			If PlayState <> PlayStates.Playing Then Return
+			If Audio.CurrentPlaybackSeconds <= SeekSeconds Then
+				Audio.SeekAbsSamples(0)
+			Else
+				Audio.SeekSeconds(CDbl(-SeekSeconds))
+			End If
+		End If
+	End Sub
+	Public Sub DoFastForward()
+		If IsFileLoaded Then
+			If PlayState <> PlayStates.Playing Then Return
+			Audio.SeekSeconds(CDbl(SeekSeconds))
+		End If
+	End Sub
+	Public Sub DoExport()
+		Using sfd As New SaveFileDialog()
+			Dim DefSavePath As String = Path.ChangeExtension(Path.GetFileName(Me.LoadedFilePath), "spc")
+			sfd.DefaultExt = ".spc"
+			sfd.FileName = DefSavePath
+			sfd.Filter = "SPC Files (*.spc)|*.spc|All Files (*.*)|*.*"
+			sfd.FilterIndex = 0
+			sfd.InitialDirectory = Path.GetDirectoryName(Me.LoadedFilePath)
+			sfd.OverwritePrompt = True
+			If sfd.ShowDialog() = Windows.Forms.DialogResult.OK Then
+				File.WriteAllBytes(sfd.FileName, Me.LoadedSpcData)
+			End If
+		End Using
+	End Sub
 	Public Sub LoadFileAndPlay(ByVal Path As String)
 		If File.Exists(Path) Then
-			LoadFile(Path)
-			DoPlay()
+			Try
+				LoadFile(Path)
+				DoPlay()
+			Catch ex As FileFormatException
+				MsgBox(ex.Message, MsgBoxStyle.Critical, "Error")
+			End Try
 		End If
 	End Sub
 	Public Sub LoadFile(ByVal Path As String)
@@ -323,13 +433,13 @@ Public Class frmPlayer
 		' save result to LoadedData
 		LoadedFilePath = Path
 		If {Games.SuperMetroid, Games.ALinkToThePast}.Contains(DetectedGame) Then
-			LoadedData = SpcData
+			LoadedSpcData = SpcData
 			DetectSongIndices()
-			Audio.LoadSPC(LoadedData)
+			Audio.LoadSPC(LoadedSpcData)
 			' DEBUG
 			'File.WriteAllBytes("test.spc", LoadedData)
 		Else
-			LoadedData = Nothing
+			LoadedSpcData = Nothing
 			SongIndices = {}
 			PlayState = PlayStates.UnsupportedGame
 		End If
@@ -337,10 +447,10 @@ Public Class frmPlayer
 	Public Sub UnloadFile()
 		If PlayState = PlayStates.Playing Or PlayState = PlayStates.Paused Then DoStop()
 		LoadedNspc = Nothing
-		LoadedData = Nothing
+		LoadedSpcData = Nothing
 		LoadedFilePath = Nothing
 	End Sub
-	Public Sub DetectSongIndices()
+	Private Sub DetectSongIndices()
 		' TODO: put this in NspcFile instead of form
 		If Not IsFileLoaded OrElse DetectedGame = Games.Unknown OrElse DetectedGame = Games.None Then
 			SongIndices = New Integer() {}
@@ -364,7 +474,7 @@ Public Class frmPlayer
 			Dim PtrAddress As UInt16 = SongTable_SM + (i * 2)
 			If (LowestPointer <> -1) AndAlso (CInt(PtrAddress) >= LowestPointer) Then Exit For
 			If LoadedNspc.IsDataPresent(PtrAddress, 2) Then
-				Dim Pointer As UInt16 = LoadedData.ReadUInt16(PtrAddress + &H100)
+				Dim Pointer As UInt16 = LoadedSpcData.ReadUInt16(PtrAddress + &H100)
 				If StartingIndex = -1 Then
 					StartingIndex = i
 				End If
@@ -387,7 +497,7 @@ Public Class frmPlayer
 			Dim PtrAddress As UInt16 = SongTable_SMW + (i * 2)
 			If PtrAddress <= LowestPointer Then Exit For
 			If LoadedNspc.IsDataPresent(PtrAddress, 2) Then
-				Dim Pointer As UInt16 = LoadedData.ReadUInt16(PtrAddress + &H100)
+				Dim Pointer As UInt16 = LoadedSpcData.ReadUInt16(PtrAddress + &H100)
 				If StartingIndex = -1 Then
 					StartingIndex = i
 				End If
@@ -410,7 +520,7 @@ Public Class frmPlayer
 			Dim PtrAddress As UInt16 = SongTable_ALTTP1 + (i * 2)
 			If PtrAddress <= LowestPointer Then Exit For
 			If LoadedNspc.IsDataPresent(PtrAddress, 2) Then
-				Dim Pointer As UInt16 = LoadedData.ReadUInt16(PtrAddress + &H100)
+				Dim Pointer As UInt16 = LoadedSpcData.ReadUInt16(PtrAddress + &H100)
 				If StartingIndex = -1 Then
 					StartingIndex = i
 				End If
@@ -425,7 +535,7 @@ Public Class frmPlayer
 		IndexList.Sort()
 		SongIndices = IndexList.ToArray()
 	End Sub
-	Public Function DetectGame() As Games
+	Private Function DetectGame() As Games
 		' TODO: this
 		'If Not IsFileLoaded Then Return Games.None
 		If Not IsNspcLoaded Then Return Games.None
@@ -439,22 +549,115 @@ Public Class frmPlayer
 			Return Games.Unknown
 		End If
 	End Function
-	Public Sub WriteSongIndex()
+	Private Sub WriteSongIndex()
 		Dim Index As Integer = CByte(SelectedSongIndex)
 		If PlayState = PlayStates.NotLoaded OrElse PlayState = PlayStates.UnsupportedGame Then Return
 		If PlayState = PlayStates.Playing OrElse PlayState = PlayStates.Paused Then DoStop()
-		Audio.LoadCheck()
+		Audio.InitCheck()
 		Select Case DetectedGame
 			Case Games.ALinkToThePast
 				Audio.APU.FreeSPC()
-				LoadedData.WriteByte(SongIndex_ALTTP + &H100, CByte(Index))
-				Audio.LoadSPC(LoadedData)
+				LoadedSpcData.WriteByte(SongIndex_ALTTP + &H100, CByte(Index))
+				Audio.LoadSPC(LoadedSpcData)
 			Case Games.SuperMetroid
 				Audio.APU.FreeSPC()
-				LoadedData.WriteByte(SongIndex_SM + &H100, CByte(Index))
-				Audio.LoadSPC(LoadedData)
+				LoadedSpcData.WriteByte(SongIndex_SM + &H100, CByte(Index))
+				Audio.LoadSPC(LoadedSpcData)
 			Case Else
 		End Select
+	End Sub
+	Private Sub UpdateTime()
+		Select Case PlayState
+			Case PlayStates.Playing, PlayStates.Paused
+				Dim Ms As Double = (CDbl(ValueToUseForTime) / CDbl(32))
+				Dim Ticks As Long = CLng(CDbl(Ms * CDbl(10000)))
+				Dim Span As New TimeSpan(Ticks)
+				'lblTime.Text = Span.ToString()
+				If Span.TotalHours >= 1 Then
+					lblTime.Text = Span.ToString("h\:mm\:ss\.fff")
+				ElseIf Span.TotalMinutes >= 1 Then
+					lblTime.Text = Span.ToString("m\:ss\.fff")
+				Else
+					lblTime.Text = Span.ToString("s\.fff")
+				End If
+			Case Else
+				lblTime.Text = ""
+		End Select
+	End Sub
+	Private Sub UpdateDebugInfo()
+#If Not DEBUG Then
+		Return	
+#Else
+		If NoDebugData Then Return
+		Dim sb As New System.Text.StringBuilder()
+		sb.Append("IsLoaded: ")
+		sb.AppendLine(Audio.IsInited)
+		sb.Append("IsApuLoaded: ")
+		sb.AppendLine(Audio.IsApuInited)
+		sb.Append("APU.IsSpcLoaded: ")
+		If Audio.APU Is Nothing Then
+			sb.AppendLine("(null)")
+		Else
+			sb.AppendLine(Audio.APU.IsSpcLoaded)
+		End If
+		sb.Append("IsReadyForPlayback: ")
+		sb.AppendLine(Audio.IsReadyForPlayback)
+		sb.Append("State: ")
+		sb.AppendLine(Audio.State.ToString())
+		sb.Append("PlaybackMode: ")
+		sb.AppendLine(Audio.PlaybackMode.ToString())
+		sb.Append("IsBufferStopped: ")
+		sb.AppendLine(Audio.IsBufferStopped)
+		sb.Append("IsPlayingLatestBlock: ")
+		sb.AppendLine(Audio.IsPlayingLatestBlock)
+		sb.Append("StopOnNextHit: ")
+		sb.AppendLine(Audio.StopOnNextHit)
+		sb.AppendLine()
+		sb.Append("SampleCounter: ")
+		sb.AppendLine(Audio.SampleCounter)
+		sb.Append("APU.SampleCounter: ")
+		If Audio.APU Is Nothing Then
+			sb.AppendLine("(null)")
+		Else
+			sb.AppendLine(Audio.APU.SampleCounter)
+		End If
+		sb.Append("PrevSampleCounter: ")
+		sb.AppendLine(Audio.PrevSampleCounter)
+		sb.Append("APU.PrevSampleCounter: ")
+		If Audio.APU Is Nothing Then
+			sb.AppendLine("(null)")
+		Else
+			sb.AppendLine(Audio.APU.PrevSampleCounter)
+		End If
+		sb.Append("CurrentPlaybackSample: ")
+		sb.AppendLine(Audio.CurrentPlaybackSample)
+		sb.Append("PlayedSampleCounter: ")
+		sb.AppendLine(Audio.PlayedSampleCounter)
+		sb.Append("SamplesPlayedFromCurrentBlock: ")
+		sb.AppendLine(Audio.SamplesPlayedFromCurrentBlock)
+		sb.Append("LoopCounter: ")
+		sb.AppendLine(Audio.LoopCounter)
+		sb.AppendLine()
+		sb.Append("CurrentPlaybackSeconds: ")
+		sb.AppendLine(Audio.CurrentPlaybackSeconds)
+		sb.Append("PlayedSecondsCounter: ")
+		sb.AppendLine(Audio.PlayedSecondsCounter)
+		sb.AppendLine()
+		sb.Append("CurrentTimestamp: ")
+		sb.AppendLine(Audio.CurrentTimestamp)
+		sb.Append("PlayPosition: ")
+		sb.AppendLine(Audio.PlayPosition)
+		sb.Append("LastPlayPosition: ")
+		sb.AppendLine(Audio.LastPlayPosition)
+		sb.Append("WritePosition: ")
+		sb.AppendLine(Audio.WritePosition)
+		sb.Append("LastWritePosition: ")
+		sb.AppendLine(Audio.LastWritePosition)
+		sb.Append("PrevLastWritePosition: ")
+		sb.AppendLine(Audio.PrevLastWritePosition)
+		sb.AppendLine()
+		lblDebug.Text = sb.ToString()
+#End If
 	End Sub
 #End Region
 #Region "Handlers"
@@ -487,9 +690,16 @@ Public Class frmPlayer
 			If ofd.ShowDialog() = Windows.Forms.DialogResult.OK Then
 				My.Settings.LastDir = Path.GetDirectoryName(ofd.FileName)
 				My.Settings.Save()
-				LoadFile(ofd.FileName)
+				Try
+					LoadFile(ofd.FileName)
+				Catch ex As Exception
+					MsgBox(ex.Message, MsgBoxStyle.Critical, "Error")
+				End Try
 			End If
 		End Using
+	End Sub
+	Private Sub btnExport_Click(sender As System.Object, e As System.EventArgs) Handles btnExport.Click
+		DoExport()
 	End Sub
 	Private Sub btnPlay_Click(sender As System.Object, e As System.EventArgs) Handles btnPlay.Click
 		If PlayState = PlayStates.Paused OrElse PlayState = PlayStates.Stopped Then
@@ -509,17 +719,31 @@ Public Class frmPlayer
 	Private Sub btnRepeat_Click(sender As System.Object, e As System.EventArgs) Handles btnRepeat.Click
 		RepeatOn = Not RepeatOn
 	End Sub
+	Private Sub btnRewind_Click(sender As System.Object, e As System.EventArgs) Handles btnRewind.Click
+		DoRewind()
+	End Sub
+	Private Sub btnFastForward_Click(sender As System.Object, e As System.EventArgs) Handles btnFastForward.Click
+		DoFastForward()
+	End Sub
 	Private Sub cboSongIndices_SelectedIndexChanged(sender As System.Object, e As System.EventArgs) Handles cboSongIndices.SelectedIndexChanged
 		UpdateComboSelectedIndex()
 	End Sub
-	Private Sub _Audio_Loaded() Handles _Audio.Loaded
+	Private Sub timUpdateTime_Tick(sender As System.Object, e As System.EventArgs) Handles timUpdateTime.Tick
+		UpdateTime()
+	End Sub
+	Private Sub timUpdateDebugInfo_Tick(sender As Object, e As System.EventArgs) Handles timUpdateDebugInfo.Tick
+		If IsFormClosing Then
+			timUpdateDebugInfo.Stop()
+			Return
+		End If
+		UpdateDebugInfo()
+	End Sub
+	Private Sub _Audio_Loaded() Handles _Audio.Inited
 	End Sub
 	Private Sub _Audio_PlaybackEnded(sender As Object, e As System.EventArgs) Handles _Audio.PlaybackEnded
 		PlayState = PlayStates.Stopped
 	End Sub
 	Private Sub _Audio_PlaybackStarted() Handles _Audio.PlaybackStarted
-	End Sub
-	Private Sub _Audio_PlaybackThreadStarted() Handles _Audio.PlaybackThreadStarted
 	End Sub
 	Private Sub _Audio_PlaybackThreadStopped() Handles _Audio.PlaybackThreadStopped
 	End Sub
@@ -542,7 +766,7 @@ Public Class frmPlayer
 			Case Else
 		End Select
 	End Sub
-	Private Sub _Audio_Unloaded() Handles _Audio.Unloaded
+	Private Sub _Audio_Unloaded() Handles _Audio.UnInited
 	End Sub
 #End Region
 End Class

@@ -14,16 +14,17 @@ Namespace Sound
 		Public Event LoopCounterChanged(sender As Object, e As LoopCounterArgs)
 		Public Event PlaybackStarted()
 		Public Event PlaybackEnded(sender As Object, e As EventArgs)
-		Public Event Loaded()
-		Public Event Unloaded()
+		Public Event Inited()
+		Public Event UnInited()
 		Public Event SpcLoaded()
 		Public Event Resetted()
 		Public Event BufferStopped()
-		Public Event PlaybackThreadStarted()
+		'Public Event PlaybackThreadStarted()
 		Public Event PlaybackThreadStopped()
 		Public Event StateChanged()
 		Public Event SeekQueued(ByVal SeekType As SeekCommand.SeekTypes, ByVal SeekValue As Object)
 		Public Event Seeked(ByVal SeekType As SeekCommand.SeekTypes, ByVal SeekValue As Object)
+		Public Event UpdateDebugInfo()
 #End Region
 #Region "Constants"
 		Public Const NUM_CHANNELS As Integer = 2
@@ -102,9 +103,35 @@ Namespace Sound
 		Private StopBufferCalled As Boolean = False
 #End Region
 #Region "Properties"
-		Public Property IsLoaded As Boolean
+		Private _IsDisposed As Boolean = False
+		Public Property IsDisposed As Boolean
+			Get
+				Return _IsDisposed
+			End Get
+			Set(value As Boolean)
+				_IsDisposed = value
+			End Set
+		End Property
+		Private _IsInit As Boolean
+		Public Property IsInited As Boolean
+			Get
+				Return _IsInit
+			End Get
+			Set(value As Boolean)
+				_IsInit = value
+				RaiseUpdateDebugInfo()
+			End Set
+		End Property
+		Private WithEvents _APU As APU
 		Public Property APU As APU
-		Public Property Timestamp As Long
+			Get
+				Return _APU
+			End Get
+			Set(value As APU)
+				_APU = value
+				RaiseUpdateDebugInfo()
+			End Set
+		End Property
 		Private _State As RendererStates
 		Public Property State As RendererStates
 			Get
@@ -114,6 +141,7 @@ Namespace Sound
 				If _State <> value Then
 					_State = value
 					RaiseEvent StateChanged()
+					RaiseUpdateDebugInfo()
 				End If
 			End Set
 		End Property
@@ -124,6 +152,7 @@ Namespace Sound
 			End Get
 			Set(value As DirectSound)
 				_Device = value
+				RaiseUpdateDebugInfo()
 			End Set
 		End Property
 		Private WithEvents _Buffer As SecondarySoundBuffer
@@ -133,6 +162,7 @@ Namespace Sound
 			End Get
 			Set(value As SoundBuffer)
 				_Buffer = value
+				RaiseUpdateDebugInfo()
 			End Set
 		End Property
 		Private _Format As WaveFormat
@@ -142,6 +172,7 @@ Namespace Sound
 			End Get
 			Set(value As WaveFormat)
 				_Format = value
+				RaiseUpdateDebugInfo()
 			End Set
 		End Property
 		Public Property NotifyPositionList As List(Of NotificationPosition)
@@ -158,6 +189,7 @@ Namespace Sound
 				If _Buffer IsNot Nothing Then
 					_Buffer.CurrentPlayPosition = value
 				End If
+				RaiseUpdateDebugInfo()
 			End Set
 		End Property
 		Private _LoopCounter As Integer
@@ -168,6 +200,7 @@ Namespace Sound
 			Set(value As Integer)
 				_LoopCounter = value
 				RaiseEvent LoopCounterChanged(Me, New LoopCounterArgs(_LoopCounter))
+				RaiseUpdateDebugInfo()
 			End Set
 		End Property
 		Private WithEvents _PlaybackThread As Thread
@@ -177,25 +210,61 @@ Namespace Sound
 			End Get
 			Set(value As Thread)
 				_PlaybackThread = value
+				RaiseUpdateDebugInfo()
 			End Set
 		End Property
 		Private Property QueuedSeekCommand As SeekCommand
 		Private Property QueuedSeekLock As Object
+		Private _LastWritePosition As Integer
 		''' <summary>Position most recent block was written to</summary>
 		Public Property LastWritePosition As Integer
-		Public Property PrevLastWritePosition As Integer
-		Public Property LastPlayPosition As Integer
-		Public Property WaveData As MemoryStream
-		Public Property PlaybackMode As PlaybackModes
-		Public Property StopOnNextHit As Boolean
-		Private _StopPositionEvent As AutoResetEvent
-		Public Property StopPositionEvent As AutoResetEvent
 			Get
-				If _StopPositionEvent Is Nothing Then _StopPositionEvent = New AutoResetEvent(False)
-				Return _StopPositionEvent
+				Return _LastWritePosition
 			End Get
-			Set(value As AutoResetEvent)
-				_StopPositionEvent = value
+			Set(value As Integer)
+				_LastWritePosition = value
+				RaiseUpdateDebugInfo()
+			End Set
+		End Property
+		Private _PrevLastWritePosition As Integer
+		Public Property PrevLastWritePosition As Integer
+			Get
+				Return _PrevLastWritePosition
+			End Get
+			Set(value As Integer)
+				_PrevLastWritePosition = value
+				RaiseUpdateDebugInfo()
+			End Set
+		End Property
+		Private _LastPlayPosition As Integer
+		Public Property LastPlayPosition As Integer
+			Get
+				Return _LastPlayPosition
+			End Get
+			Set(value As Integer)
+				_LastPlayPosition = value
+				RaiseUpdateDebugInfo()
+			End Set
+		End Property
+		Public Property WaveData As MemoryStream
+		Private _PlaybackMode As PlaybackModes
+		Public Property PlaybackMode As PlaybackModes
+			Get
+				Return _PlaybackMode
+			End Get
+			Set(value As PlaybackModes)
+				_PlaybackMode = value
+				RaiseUpdateDebugInfo()
+			End Set
+		End Property
+		Private _StopOnNextHit As Boolean
+		Public Property StopOnNextHit As Boolean
+			Get
+				Return _StopOnNextHit
+			End Get
+			Set(value As Boolean)
+				_StopOnNextHit = value
+				RaiseUpdateDebugInfo()
 			End Set
 		End Property
 		Public ReadOnly Property WritePosition As Integer
@@ -209,33 +278,31 @@ Namespace Sound
 		End Property
 		Public ReadOnly Property CurrentTimestamp As Long
 			Get
-				If State <> RendererStates.Playing Then
-					Return 0
-				Else
+				If State = RendererStates.Playing Then
 					Return (CLng(LoopCounter) * CLng(BUFFER_SAMPLES)) + _Buffer.CurrentPlayPosition
+				Else
+					Return 0
 				End If
 			End Get
 		End Property
 		Public ReadOnly Property IsBufferStopped As Boolean
 			Get
-				'If (Buffer Is Nothing) Then Return True
-				'Return ((Buffer.Status Or BufferStatus.Playing) > 0)
-				Return ((Buffer Is Nothing) OrElse ((Buffer.Status Or BufferStatus.Playing) > 0))
+				Return ((Buffer Is Nothing) OrElse ((Buffer.Status And BufferStatus.Playing) = 0))
 			End Get
 		End Property
-		Public ReadOnly Property IsApuLoaded As Boolean
+		Public ReadOnly Property IsApuInited As Boolean
 			Get
-				Return (APU IsNot Nothing AndAlso APU.IsLoaded)
+				Return (APU IsNot Nothing AndAlso APU.IsInited)
 			End Get
 		End Property
 		Public ReadOnly Property IsReadyForPlayback As Boolean
 			Get
-				Return (IsLoaded AndAlso IsApuLoaded AndAlso APU.IsSpcLoaded)
+				Return (IsInited AndAlso IsApuInited AndAlso APU.IsSpcLoaded)
 			End Get
 		End Property
 		Public ReadOnly Property SampleCounter As Long
 			Get
-				If IsApuLoaded Then
+				If IsApuInited Then
 					Return APU.SampleCounter
 				Else
 					Return 0
@@ -244,7 +311,7 @@ Namespace Sound
 		End Property
 		Public ReadOnly Property PrevSampleCounter As Long
 			Get
-				If IsApuLoaded Then
+				If IsApuInited Then
 					Return APU.PrevSampleCounter
 				Else
 					Return 0
@@ -396,10 +463,19 @@ Namespace Sound
 				Return (CDbl(PlayedSampleCounter) / CDbl(SAMPLES_PER_SECOND))
 			End Get
 		End Property
+		Private Property Owner As IWin32Window
+		Public ReadOnly Property IsPlaybackThreadRunning As Boolean
+			Get
+				If PlaybackThread Is Nothing Then Return False
+				If PlaybackThread.ThreadState = ThreadState.Running Then Return True ' other states as well?
+				If PlaybackThread.IsAlive Then Return True
+				Return False
+			End Get
+		End Property
 #End Region
 #Region "Constructors/Destructors"
 		Public Sub New()
-			IsLoaded = False
+			IsInited = False
 			State = RendererStates.Uninitialized
 			ResetPositions()
 			PlaybackMode = PlaybackModes.None
@@ -411,7 +487,6 @@ Namespace Sound
 			NotifyPositionList = Nothing
 			PlaybackThread = Nothing
 			BufferHitEvents = Nothing
-			StopPositionEvent = New AutoResetEvent(False)
 			StopOnNextHit = False
 			QueuedSeekLock = New Object()
 			If (BUFFER_BLOCKS Mod 2) Then Throw New Exception("Number of buffer blocks must be even")
@@ -419,12 +494,18 @@ Namespace Sound
 		End Sub
 #End Region
 #Region "Methods"
-		Public Sub Load()
-			Load(Nothing)
+		Public Sub InitCheck()
+			If Not IsInited Then
+				Init()
+			End If
 		End Sub
-		Public Sub Load(ByVal Owner As Control)
+		Public Sub Init()
+			Init(Nothing)
+		End Sub
+		Public Sub Init(ByVal Owner As Control)
+			Me.Owner = Owner
 			ResetPositions()
-			If IsLoaded Then Return
+			If IsInited Then Return
 			Dim res As Result
 			If State <> RendererStates.Uninitialized Then Throw New Exception("Already initialized")
 			State = RendererStates.Initializing
@@ -456,7 +537,6 @@ Namespace Sound
 				End With
 				' Buffer
 				Buffer = New SecondarySoundBuffer(Device, BufferDesc)
-				StopPositionEvent.Reset()
 				NotifyPositionList = New List(Of NotificationPosition)()
 				ReDim _BufferHitEvents(BUFFER_BLOCKS - 1)
 				For i As Integer = 0 To BUFFER_BLOCKS - 1
@@ -477,72 +557,79 @@ Namespace Sound
 				Throw ex
 			End Try
 			APU = New APU()
-			IsLoaded = True
-			RaiseEvent Loaded()
+			IsInited = True
+			RaiseEvent Inited()
 		End Sub
-		Public Sub LoadCheck()
-			If Not IsLoaded Then
-				Load()
-			End If
-		End Sub
-		Public Sub LoadSPC(ByVal Path As String)
-			LoadCheck()
-			If Not IsLoaded Then Return
-			If Not IsApuLoaded Then Return
-			APU.LoadSPC(Path)
-			RaiseEvent SpcLoaded()
-		End Sub
-		Public Sub LoadSPC(ByVal SpcData As Byte())
-			LoadCheck()
-			If Not IsLoaded Then Return
-			If Not IsApuLoaded Then Return
-			APU.LoadSPC(SpcData)
-			RaiseEvent SpcLoaded()
-		End Sub
-		Public Sub Unload()
-			If Not IsLoaded Then Return
+		Public Sub UnInit()
 			[Stop]()
-			Buffer.Dispose()
-			Device.Dispose()
-			Timestamp = 0
-			LoopCounter = 0
-			APU.Unload()
-			APU = Nothing
-			Device = Nothing
+			If IsPlaybackThreadRunning Then EndPlaybackThread()
+			If Buffer IsNot Nothing Then Buffer.Dispose()
 			Buffer = Nothing
+			If Device IsNot Nothing Then Device.Dispose()
+			Device = Nothing
 			BufferDesc = Nothing
 			Format = Nothing
 			NotifyPositionList = Nothing
-			PlaybackThread = Nothing
 			BufferHitEvents = Nothing
-			StopPositionEvent.Reset()
 			StopOnNextHit = False
 			SyncLock QueuedSeekLock
 				QueuedSeekCommand = Nothing
 			End SyncLock
-			State = RendererStates.Uninitialized
-			IsLoaded = False
-			RaiseEvent Unloaded()
+			ResetPositions()
+			If APU IsNot Nothing Then
+				APU.UnInit()
+				APU = Nothing
+			End If
 		End Sub
 		Public Sub Reset()
 			Reset(Nothing)
 		End Sub
 		Public Sub Reset(ByVal Owner As Control)
-			If Not IsLoaded Then Return
-			Unload()
-			Load(Owner)
+			If Not IsInited Then Return
+			UnInit()
+			Init(Owner)
 			RaiseEvent Resetted()
 		End Sub
+		Public Sub Restart()
+			If Not IsReadyForPlayback Then Return
+			SyncLock QueuedSeekLock
+				QueuedSeekCommand = New SeekCommand(SeekCommand.SeekTypes.Restart)
+			End SyncLock
+			RaiseEvent SeekQueued(SeekCommand.SeekTypes.Restart, Nothing)
+		End Sub
+		Public Sub ResetPositions()
+			PlayPosition = 0
+			LastPlayPosition = 0
+			LastWritePosition = 0
+			PrevLastWritePosition = 0
+			LoopCounter = 0
+			StopOnNextHit = False
+		End Sub
+		Public Sub LoadSPC(ByVal Path As String)
+			InitCheck()
+			If Not IsInited Then Return
+			If Not IsApuInited Then Return
+			APU.LoadSPC(Path)
+			RaiseEvent SpcLoaded()
+		End Sub
+		Public Sub LoadSPC(ByVal SpcData As Byte())
+			InitCheck()
+			If Not IsInited Then Return
+			If Not IsApuInited Then Return
+			APU.LoadSPC(SpcData)
+			RaiseEvent SpcLoaded()
+		End Sub
 		Public Sub PlayApu()
-			LoadCheck()
+			InitCheck()
 			If Not IsReadyForPlayback Then Return
 			If State = RendererStates.Playing Then Me.Stop() ' does this break things??
 			If State = RendererStates.Uninitialized Then Throw New Exception("Not initialized")
 			If State = RendererStates.Initializing Then Throw New Exception("Not done initializing")
-			If State = RendererStates.Stopped Then
-				StopBufferCalled = False
-				PlaybackMode = PlaybackModes.SnesApu
+			If State = RendererStates.Stopped OrElse State = RendererStates.Paused Then
 				State = RendererStates.Starting
+				If IsPlaybackThreadRunning Then EndPlaybackThread()
+				PlaybackMode = PlaybackModes.SnesApu
+				StopBufferCalled = False
 				StopOnNextHit = False
 				PlaybackThread = New Thread(AddressOf PlaybackThreadProc)
 				PlaybackThread.Name = "AudioPlaybackThread"
@@ -555,9 +642,40 @@ Namespace Sound
 			End If
 			RaiseEvent PlaybackStarted()
 		End Sub
+		Public Sub [Stop]()
+			If State = RendererStates.Playing OrElse State = RendererStates.Paused Then
+				State = RendererStates.Stopping
+				EndPlaybackThread()
+				'APU.Restart() ' NEW: problems for pausing?
+				ResetPositions()
+				'APU.ResetCounters()
+				State = RendererStates.Stopped
+				PlaybackMode = PlaybackModes.None
+				RaiseEvent PlaybackEnded(Me, EventArgs.Empty)
+			End If
+		End Sub
+		'Public Sub Pause()
+		'End Sub
+		Private Sub StopBuffer()
+			If StopBufferCalled Then Return
+			StopBufferCalled = True
+			If State = RendererStates.Playing Or State = RendererStates.Stopping Or State = RendererStates.Pausing Then
+				SyncLock QueuedSeekLock
+					QueuedSeekCommand = Nothing
+				End SyncLock
+				Dim res As Result
+				res = Buffer.Stop()
+				If Not res.IsSuccess Then
+					Throw New Exception(res.Description)
+				End If
+				WaitForTrue(IsBufferStopped, 3000, 50)
+				WriteSilenceAll()
+				RaiseEvent BufferStopped()
+			End If
+		End Sub
 		Private Sub PlaybackThreadProc()
 			Try
-				RaiseEvent PlaybackThreadStarted()
+				'RaiseEvent PlaybackThreadStarted()
 				Dim res As Result
 				PlaybackThreadExitedHandle.Reset()
 				PrevLastWritePosition = LastWritePosition
@@ -589,36 +707,6 @@ Namespace Sound
 			Finally
 				RaiseEvent PlaybackThreadStopped()
 			End Try
-		End Sub
-		Public Sub [Stop]()
-			If State = RendererStates.Playing Then
-				State = RendererStates.Stopping
-				'PlaybackMode = PlaybackModes.None
-				StopBuffer()
-				EndPlaybackThread()
-				ResetPositions()
-				APU.ResetCounters()
-				State = RendererStates.Stopped
-				PlaybackMode = PlaybackModes.None
-				RaiseEvent PlaybackEnded(Me, EventArgs.Empty)
-			End If
-		End Sub
-		Private Sub StopBuffer()
-			If StopBufferCalled Then Return
-			StopBufferCalled = True
-			If State = RendererStates.Playing Or State = RendererStates.Stopping Then
-				SyncLock QueuedSeekLock
-					QueuedSeekCommand = Nothing
-				End SyncLock
-				Dim res As Result
-				res = Buffer.Stop()
-				If Not res.IsSuccess Then
-					Throw New Exception(res.Description)
-				End If
-				WaitForTrue(IsBufferStopped, 3000, 50)
-				WriteSilenceAll()
-				RaiseEvent BufferStopped()
-			End If
 		End Sub
 		Public Sub EndPlaybackThread()
 			If PlaybackThread IsNot Nothing AndAlso PlaybackThread.IsAlive Then
@@ -667,12 +755,6 @@ Namespace Sound
 				If Not res.IsSuccess Then Throw New Exception(res.Description)
 			End If
 		End Sub
-		Public Sub MarkBufferStart()
-			If State = RendererStates.Playing Then
-				Dim Data As Short() = {Short.MaxValue, Short.MaxValue, Short.MinValue, Short.MinValue}
-				Buffer.Write(Data, 0, Data.Length, 0, LockFlags.None)
-			End If
-		End Sub
 		Public Function GetWritePositionForNotifyIndex(ByVal Index As Integer) As Integer
 			Dim WriteIndex As Integer
 			Dim HalfBlocks As Integer = BUFFER_BLOCKS / 2
@@ -683,6 +765,41 @@ Namespace Sound
 			End If
 			Return WriteIndex * BLOCK_BYTES
 		End Function
+		Private Sub HandleQueuedSeekCommand()
+			If PlaybackMode = PlaybackModes.SnesApu AndAlso IsApuInited Then
+				SyncLock QueuedSeekLock
+					Dim SavedVolume As Integer = Buffer.Volume
+					Buffer.Volume = 0
+					If QueuedSeekCommand IsNot Nothing Then
+						Dim SeekType As SeekCommand.SeekTypes = QueuedSeekCommand.SeekType
+						Dim SeekValue = Nothing
+						Select Case QueuedSeekCommand.SeekType
+							Case SeekCommand.SeekTypes.AbsSamples
+								APU.SeekAbsSamples(QueuedSeekCommand.Samples)
+								SeekValue = QueuedSeekCommand.Samples
+							Case SeekCommand.SeekTypes.AbsSeconds
+								APU.SeekAbsSeconds(QueuedSeekCommand.Seconds)
+								SeekValue = QueuedSeekCommand.Seconds
+							Case SeekCommand.SeekTypes.RelSamples
+								APU.SeekSamples(QueuedSeekCommand.Samples)
+								SeekValue = QueuedSeekCommand.Samples
+							Case SeekCommand.SeekTypes.RelSeconds
+								APU.SeekSeconds(QueuedSeekCommand.Seconds)
+								SeekValue = QueuedSeekCommand.Seconds
+							Case SeekCommand.SeekTypes.Restart
+								APU.Restart()
+								'APU.Reset()
+								'APU.ResetCounters()
+								WriteSilenceAll() ' NEW (TODO: make sure this works and doesn't break anything)
+								'SeekValue = 0
+						End Select
+						QueuedSeekCommand = Nothing
+						RaiseEvent Seeked(SeekType, SeekValue)
+					End If
+					Buffer.Volume = SavedVolume
+				End SyncLock
+			End If
+		End Sub
 		Public Sub SeekSeconds(ByVal Seconds As Double)
 			If Not IsReadyForPlayback Then Return
 			SyncLock QueuedSeekLock
@@ -711,28 +828,12 @@ Namespace Sound
 			End SyncLock
 			RaiseEvent SeekQueued(SeekCommand.SeekTypes.AbsSamples, Samples)
 		End Sub
-		Public Sub Restart()
-			If Not IsReadyForPlayback Then Return
-			SyncLock QueuedSeekLock
-				QueuedSeekCommand = New SeekCommand(SeekCommand.SeekTypes.Restart)
-			End SyncLock
-			RaiseEvent SeekQueued(SeekCommand.SeekTypes.Restart, Nothing)
-		End Sub
 		Public Function BlockBytesToSamples(ByVal Bytes As Integer) As Integer
 			Return (Bytes / BYTES_PER_SAMPLE)
 		End Function
 		Public Function BlockSamplesToBytes(ByVal Samples As Integer) As Integer
 			Return (Samples * BYTES_PER_SAMPLE)
 		End Function
-		Public Sub ResetPositions()
-			Timestamp = 0
-			LoopCounter = 0
-			LastWritePosition = 0
-			LastPlayPosition = 0
-			PrevLastWritePosition = 0
-			StopOnNextHit = False
-			StopPositionEvent.Reset()
-		End Sub
 		''' <summary>Singular place where all writing blocks to buffer happens, so we can intercept for amplification</summary>
 		Private Sub DoBufferWrite()
 			Select Case PlaybackMode
@@ -764,8 +865,8 @@ Namespace Sound
 		End Sub
 		' new wave stuff
 		Public Sub PlayWave(ByVal WaveStream As MemoryStream)
-			LoadCheck()
-			If Not IsLoaded Then Return
+			InitCheck()
+			If Not IsInited Then Return
 			If State = RendererStates.Playing Then Me.Stop()
 			If State = RendererStates.Uninitialized Then Throw New Exception("Not initialized")
 			If State = RendererStates.Initializing Then Throw New Exception("Not done initializing")
@@ -804,35 +905,10 @@ Namespace Sound
 				StopOnNextHit = True
 			End If
 		End Sub
-		Private Sub HandleQueuedSeekCommand()
-			If PlaybackMode = PlaybackModes.SnesApu AndAlso IsApuLoaded Then
-				SyncLock QueuedSeekLock
-					If QueuedSeekCommand IsNot Nothing Then
-						Dim SeekType As SeekCommand.SeekTypes = QueuedSeekCommand.SeekType
-						Dim SeekValue = Nothing
-						Select Case QueuedSeekCommand.SeekType
-							Case SeekCommand.SeekTypes.AbsSamples
-								APU.SeekAbsSamples(QueuedSeekCommand.Samples)
-								SeekValue = QueuedSeekCommand.Samples
-							Case SeekCommand.SeekTypes.AbsSeconds
-								APU.SeekAbsSeconds(QueuedSeekCommand.Seconds)
-								SeekValue = QueuedSeekCommand.Seconds
-							Case SeekCommand.SeekTypes.RelSamples
-								APU.SeekSamples(QueuedSeekCommand.Samples)
-								SeekValue = QueuedSeekCommand.Samples
-							Case SeekCommand.SeekTypes.RelSeconds
-								APU.SeekSeconds(QueuedSeekCommand.Seconds)
-								SeekValue = QueuedSeekCommand.Seconds
-							Case SeekCommand.SeekTypes.Restart
-								APU.Restart()
-								WriteSilenceAll() ' NEW (TODO: make sure this works and doesn't break anything)
-								'SeekValue = 0
-						End Select
-						QueuedSeekCommand = Nothing
-						RaiseEvent Seeked(SeekType, SeekValue)
-					End If
-				End SyncLock
-			End If
+		Public Sub RaiseUpdateDebugInfo()
+#If DEBUG Then
+			RaiseEvent UpdateDebugInfo()
+#End If
 		End Sub
 #End Region
 #Region "Handlers"
@@ -859,6 +935,9 @@ Namespace Sound
 			Catch ex As Exception
 			End Try
 		End Sub
+		Private Sub _APU_UpdateDebugInfo() Handles _APU.UpdateDebugInfo
+			RaiseUpdateDebugInfo()
+		End Sub
 #End Region
 #Region "IDisposable Support"
 		Private disposedValue As Boolean
@@ -866,12 +945,32 @@ Namespace Sound
 			If Not Me.disposedValue Then
 				If disposing Then
 					' dispose managed state (managed objects).
+					Dim WaitCounter As Integer = 0
+					If IsPlaybackThreadRunning Then EndPlaybackThread()
+					WaitCounter = 0
+					While State = RendererStates.Stopping OrElse State = RendererStates.Pausing OrElse State = RendererStates.Initializing
+						Thread.Sleep(25)
+						WaitCounter += 1
+						If WaitCounter >= 50 Then
+							Debug.WriteLine("NspcAudio.Dispose timed out waiting for state change")
+							Exit While
+						End If
+					End While
+					If State = RendererStates.Playing OrElse State = RendererStates.Paused Then
+						[Stop]()
+					End If
+					If APU IsNot Nothing AndAlso Not APU.IsDisposed Then
+						APU.Dispose()
+						APU = Nothing
+					End If
+					If State <> RendererStates.Uninitialized Then Me.UnInit()
 				End If
 				' free unmanaged resources (unmanaged objects) and override Finalize() below.
 				If Buffer IsNot Nothing AndAlso Not Buffer.Disposed Then Buffer.Dispose()
 				If Device IsNot Nothing AndAlso Not Device.Disposed Then Device.Dispose()
 				' set large fields to null.
 			End If
+			Me.IsDisposed = True
 			Me.disposedValue = True
 		End Sub
 		' override Finalize() only if Dispose(ByVal disposing As Boolean) above has code to free unmanaged resources.
@@ -890,10 +989,12 @@ Namespace Sound
 		Public Enum RendererStates As Integer
 			Uninitialized = 0
 			Stopped
+			Paused
 			Playing
 			Initializing
 			Starting
 			Stopping
+			Pausing
 		End Enum
 		Public Enum PlaybackModes As Integer
 			None = 0

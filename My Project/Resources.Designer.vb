@@ -73,6 +73,16 @@ Namespace My.Resources
         '''<summary>
         '''  Looks up a localized resource of type System.Drawing.Bitmap.
         '''</summary>
+        Friend ReadOnly Property btn24FastForward() As System.Drawing.Bitmap
+            Get
+                Dim obj As Object = ResourceManager.GetObject("btn24FastForward", resourceCulture)
+                Return CType(obj,System.Drawing.Bitmap)
+            End Get
+        End Property
+        
+        '''<summary>
+        '''  Looks up a localized resource of type System.Drawing.Bitmap.
+        '''</summary>
         Friend ReadOnly Property btn24Pause() As System.Drawing.Bitmap
             Get
                 Dim obj As Object = ResourceManager.GetObject("btn24Pause", resourceCulture)
@@ -106,6 +116,16 @@ Namespace My.Resources
         Friend ReadOnly Property btn24RepeatOn() As System.Drawing.Bitmap
             Get
                 Dim obj As Object = ResourceManager.GetObject("btn24RepeatOn", resourceCulture)
+                Return CType(obj,System.Drawing.Bitmap)
+            End Get
+        End Property
+        
+        '''<summary>
+        '''  Looks up a localized resource of type System.Drawing.Bitmap.
+        '''</summary>
+        Friend ReadOnly Property btn24Rewind() As System.Drawing.Bitmap
+            Get
+                Dim obj As Object = ResourceManager.GetObject("btn24Rewind", resourceCulture)
                 Return CType(obj,System.Drawing.Bitmap)
             End Get
         End Property
