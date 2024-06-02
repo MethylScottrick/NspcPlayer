@@ -380,12 +380,16 @@ Public Class frmPlayer
 		Dim BlockList As New List(Of NspcBlock)()
 		Dim SpcData As Byte() = Nothing
 		' load nspc file
+		Dim TerminatorFound As Boolean = False
 		Using NspcFileStream As New FileStream(Path, FileMode.Open)
 			Using NspcFileReader As New BinaryReader(NspcFileStream)
 				' build NpscBlock's
 				While NspcFileStream.Position < NspcFileStream.Length
 					Dim BlockLength As UInt16 = NspcFileReader.ReadUInt16()
-					If BlockLength = 0 Then Exit While
+					If BlockLength = 0 Then
+						TerminatorFound = True
+						Exit While
+					End If
 					Dim NewBlock As New NspcBlock()
 					NewBlock.Address = NspcFileReader.ReadUInt16()
 					NewBlock.Data = NspcFileReader.ReadBytes(BlockLength)
@@ -393,6 +397,7 @@ Public Class frmPlayer
 				End While
 			End Using
 		End Using
+		If Not TerminatorFound Then Throw New FileFormatException("N-SPC terminator not found. File might be truncated, or an invalid format.")
 		Dim BlockArray As NspcBlock() = BlockList.ToArray()
 		Me.LoadedNspc = New NspcFile(BlockArray)
 		' determine game
@@ -536,8 +541,6 @@ Public Class frmPlayer
 		SongIndices = IndexList.ToArray()
 	End Sub
 	Private Function DetectGame() As Games
-		' TODO: this
-		'If Not IsFileLoaded Then Return Games.None
 		If Not IsNspcLoaded Then Return Games.None
 		If LoadedNspc.IsAnyDataPresent(SongTable_SM, 32) Then
 			Return Games.SuperMetroid
